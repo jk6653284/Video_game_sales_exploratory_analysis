@@ -1,0 +1,1186 @@
+# Video Game Sales Analysis by Jina Kim
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2) # for plotting graphs
+library(gridExtra) # for displaying multiple graphs at once
+library(dplyr) # for transforming data
+library(scales) # for changing y axis values
+library(GGally) # to use the ggcorr function
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load data
+vg <- read.csv('Video_Games_Sales_as_at_22_Dec_2016.csv')
+
+```
+
+# Introduction
+This Kaggle dataset contains sales and ratings data of released video games from VGChartz and Metacritic (https://www.kaggle.com/rush4ratio/video-game-sales-with-ratings). 
+While there are more than 164000 unique observations in the dataset, the original uploader notes that complete cases with ratings are about 6900 games in total.
+
+I have always been a big fan of video games, and to look into the data to see exactly what games tend to popular (in terms of number of release) and successful (in terms of sales) seemed intriguing.
+
+
+## Data structure
+Let's first look into the data to get some basic idea.
+
+This is the first few rows of the dataset.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+head(vg)
+```
+
+
+The structure of the datset is as follows.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+str(vg)
+```
+
+The shape shows that there are 16719 observations with 16 variables
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+dim(vg)
+```
+
+What are the names of the columns?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+names(vg)
+```
+
+Finally, let's see a summary of the numeric values of the dataframe.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg)
+```
+
+While this dataset is formatted pretty neatly, it seems that the data still requires some cleaning for analysis purposes.
+
+## Cleaning data
+There are some values that need to be processed for further data analysis.
+
+1. Let's start by changing year value to a numeric value.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg$Year_of_Release <- as.numeric(as.character(vg$Year_of_Release))
+```
+
+2. Next, let's also change the user score value to a numeric value.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg$User_Score <- as.numeric(as.character(vg$User_Score))
+```
+
+3. Notice that the user score is a scale of 0-10 while it is 0-100 for critic score. Let's change user score scale to 0-100.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg$User_Score <- vg$User_Score * 10
+```
+
+## treating missing values
+let's check on our dataset again.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg)
+```
+
+I see 2 problems that stand out.
+
+First there are too many values in the 'other' category (9252 for developer name). This cannot really be treated right now, because the original dataset provider doesn't provide any info regarding the 'other' values, and frankly, it would be too much work to individually search for these 'other' values.
+
+Second, there are too many missing values(NaN), especially for numeric variables such as the critic and user scores (9129 missing values for user score!). I don't want to eliminate all rows with a NaN score value for the sake of other analysis, so I'll just create a separate dataframe called 'vg_scores' with all the NaN score value deleted.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg_scores <- subset(vg, 
+                    !is.na(vg$User_Score) & !is.na(vg$Critic_Score))
+```
+
+Let's check that we have no NaN score values.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg_scores)
+```
+
+Before we move on to the analysis, I wanted to see if scores were missing for a particular group of games. Specifically, my guess is that maybe critic and user scores were not readily available in the early periods(80's and perhaps 90's), so a lot of missing score values came from those years. So let's create a separate dataframe only containing rows with NaN user or critic score, and create a histogram based on year of release both for the na dataframe and original dataframe.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+is_na_vg <- subset(vg, 
+                   is.na(vg$User_Score) | is.na(vg$Critic_Score))
+
+summary(is_na_vg)
+
+n1 <- ggplot(data = vg,
+             aes(x = Year_of_Release)) +
+  geom_histogram(aes(color = I('white'))) + 
+  ggtitle('Year of Release for original data')
+
+n2 <- ggplot(data = is_na_vg,
+             aes(x = Year_of_Release)) +
+  geom_histogram(aes(color = I('white'))) +
+  ggtitle('Year of Release for games with no score')
+
+grid.arrange(n1,n2)
+```
+
+Well, it turns out that the two graphs have a strikingly similar shape, meaning that there is a certain proportion of games that do not have either critic or user score (or both) every year. The answer to why there is so much missing score values remains a mystery that should explored at another time.
+
+#Univariate Plots Section
+Now let's move on to the univariate analysis!
+
+Recall that there are 16 columns for the dataset, which are as follows:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+names(vg)
+```
+
+## Year of Release
+Let's start with the year of release.
+
+First, let's look at the range of release dates.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+range(subset(vg,
+             !is.na(vg$Year_of_Release))$Year_of_Release)
+```
+
+Hmm. That's strange. The data was last updated at December 22nd last year, so it really doesn't make sense to include any games that are released after that. These may include games that are scheduled to release at a set date in the future, or simple mistake in recording. In any case, let's only include titles that are released from 1980 to 2016.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg <- subset(vg, 
+             vg$Year_of_Release < 2017)
+```
+
+Let's check the range again.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+range(subset(vg,
+             !is.na(vg$Year_of_Release))$Year_of_Release)
+```
+
+Perfect! Now let's create a histogram of games released by each year. (binwidth = 1)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = vg,
+       aes(x = Year_of_Release)) +
+  geom_histogram(color = I('white'), binwidth = 1) +   
+  geom_vline(xintercept = 2008, color = I('orange'), linetype = 2)
+```
+
+So it seems that the number of games released have been increasing over time, peaking at 2008 and 2009, though there is a drastic drop after that. Why would that be?
+
+My guess is that after the 2008 financial crisis, publishers became more risk-aversive and more cautious, and thus were more selective as to what games should be developed and published.
+
+A Newyork Times article about blockbuster games (or the so-called AAA games) seems to back this hypothesis (http://www.nytimes.com/2013/09/30/technology/a-shrinking-list-of-blockbusters-dominates-video-games.html?pagewanted=all&_r=0). The AAA games are gathering more money than before through sequels and more sequels (just look at resident evil 7, final fantasy 15, or those sports games that are released annually - those sequal numbers are really quite absurd).
+
+
+## Genre
+Let's look at what game genres there are first.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg$Genre)
+```
+
+Hmm. There are 2 games with an empty genre. Let's get a closer look at those two row.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+subset(vg, vg$Genre == '')
+```
+
+That's strange. These 2 games for the GEN platform don't even have name or a genre, but it does have a publisher name and records of sales.
+
+Further research based on the year released and the publisher(https://en.wikipedia.org/wiki/Acclaim_Entertainment#Games_published) suggets that there are few candidates as to what these mysterious games might be (Alien 3? Mortal Kombat II? Spider-Man??), but for the sake of accuracy, let's just leave these two rows out of the way.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg <- subset(vg, !vg$Genre == '')
+```
+
+And just to check that they are gone:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+subset(vg, vg$Genre == '')
+```
+
+There! Now let's create a histogram of game genres.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = vg,
+       aes(x = Genre, fill = Genre)) +
+  geom_histogram(stat = 'count') + 
+  scale_y_continuous(breaks = seq(0, 3500, 250),
+                     expand = c(0,0),
+                     limits = c(0,3500)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  guides(fill = FALSE)
+```
+
+Gosh. That's a LOT of action games. There are also quite a few sports games. One interesting thing about the genre graph is that there is an intersting amount of Misc. genres released, just a little short of 1750 games. That makes it the 3rd most common game genre!
+
+There are some sites that lists all the Misc. genre games. While there are games that lie on the boundary of several different genre, I guess some games are just too bizarre to be put into a single particular genre (http://tvtropes.org/pmwiki/pmwiki.php/Main/MiscellaneousGames).
+
+For example, here we have the widely acclaimed game 'flower' (https://www.youtube.com/watch?v=nJam5Auwj1E), which is...more of a psychological experience gliding through a beautiful scenary, but is defintely not a standard 'adventure' or 'puzzle' game.
+
+It would be nice in the future if these Misc. genre can be broken down into several more categories. It would also be interesting to analyze games that are defined to have multiple genres, to see which genres are most often converged. I also do not see some of the more common genres (in my opinion) such as 'horror' or 'mystery'. Perhaps these genres were left out for this particular dataset, but game genre is an interesting topic that deserves a separate analyis.
+
+## Platform
+Let's see a quick summary of platforms.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg$Platform)
+```
+
+There are 31 different platforms. Here is a simple histogram for all the platforms.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data =vg,
+       aes(x = Platform)) +
+  geom_histogram(stat = 'count') +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+It is clear that more than 2000 game titles were released for the DS and PS2 console individually. What is interesting though, is that both platforms are discontinued, and no new games are released for the two games since 2013 and 2014 respectively. Despite that fact, the next generation consoles(3DS, PS3) have no where near as many game titles as the former two. It is also interesting to note that PC, which doesn't have a 'generation' per se, has quite a small number of game titles available.
+
+One reason may be that these two platforms were in the market when more games were released. Recall from the year analysis that number of games released increased drastically until reaching the peak around 2008 and 2009. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ds_h <- ggplot(data = subset(vg, 
+                             Platform == 'DS' & Year_of_Release > 2000),
+       aes(x = Year_of_Release)) +
+  geom_histogram(binwidth = 1, 
+                 color= I(('white'))) + 
+  guides(fill = FALSE) +
+  ggtitle('Games released for DS') +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+ps2_h <- ggplot(data = subset(vg, Platform == 'PS2'),
+       aes(x = Year_of_Release)) +
+  geom_histogram(binwidth = 1, 
+                 color = I(('white'))) +
+  guides(fill = FALSE) +
+  ggtitle('Games released for PS2') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+grid.arrange(ds_h, ps2_h, ncol=2)
+```
+
+And surely enough, these two histograms show that the 2 platforms were quite strong in the market during those golden ages, which might partially explain the surprisingly large amount of game titles available.
+
+One thing to note about the platforms is that many platforms exist only for certain years (around 10 for major consoles). This is especially true for platforms with various generations released (Playstation, Xbox, Wii). This indicates that we may be able to conduct some interesting analysis between consoles of the same generation(PS4 vs XboxOne), or even between different generations for a single console type (PS3 vs PS4). This would be further discussed in the bivariate analysis.
+
+## Publisher
+Let's look at the number of unique publishers.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+str(vg$Publisher)
+```
+
+Whoa, 582 different publishers in the dataset. we might need to narrow that down. For example, here we can see that while there are 582 unique publishers, there are clearly major publishers that released more than 100 games. Because of this, it's really hard to see the graph.
+
+So let's create a seperate dataframe that groups all the games by each publisher.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg$Publisher[vg$Publisher == ''] <- NaN
+
+major_pub <- vg %>%
+  group_by(Publisher) %>%
+  summarise(
+    n = n()) %>%
+  arrange(desc(n))
+
+summary(major_pub)
+head(major_pub)
+```
+
+We see that the minimum number of games published is 1, while the maximum is 1344 (Electronic Arts).
+
+Now, let's look at a histogram of games released by publishers for 'major' publishers in the top 5% tier.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(major_pub, n>=quantile(n, 0.95)&!is.na(major_pub$Publisher)),
+       aes(x = Publisher, y = n, fill = Publisher)) +
+  geom_bar(stat='identity') + 
+  scale_y_continuous(breaks = seq(0, 1500, 250),
+                     expand = c(0,0),
+                     limits = c(0,1500)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  guides(fill = FALSE)
+```
+
+Even within the 'major' publishers, there are few that literally outpasses others in terms of # of games released. EA is the clear leader with more than 1000 games released followed by Activision, Nintendo, Ubisoft, and Konami.
+
+## Critic_Score & User_Score
+Let's use the vg_scores dataframe that excluded all rows without a critic/user score for the score analyis.
+
+How does the statistic look for each score?
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg_scores$Critic_Score)
+summary(vg_scores$User_Score)
+```
+
+Raw scores are a little difficult for direct comparison. Let's create a boxplot to compare the two variables.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+bp1 <- ggplot(data=vg_scores,
+       aes(x = 'Critic_Score', y=Critic_Score)) + 
+  geom_boxplot(aes(fill = I('#0072B2'))) + 
+  scale_y_continuous(limits = c(0,100),
+                     breaks = seq(0,100,20))
+
+bp2 <- ggplot(data=vg_scores,
+       aes(x = 'User_Score', y=User_Score)) + 
+  geom_boxplot(aes(fill = I("#F0E442"))) +
+  scale_y_continuous(limits = c(0,100),
+                     breaks = seq(0,100,20))
+
+grid.arrange(bp1,bp2,ncol=2)
+```
+
+It seems that the middle 50% scores is slightly higher for the users than the critics. This is expectable, since critics are not really known for generous scores. It is interesting, however, that as a whole, there are a lot more lower outliers for the user scores. In fact, while none of the critic scores are lower than 10, There are quite a few user scores that are lower than 10!
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+head(subset(vg, User_Score <= 10), 3)
+```
+It seems that the popular animation 'My Little Pony' hasn't done so well to please its video game fans. A score of 0 is really brutal. Ouch.
+
+## Critic_Count & User_Count
+We can conduct a similar univariate analysis for the number of critic and user scores, as we did for the critic and user score.
+
+Let's first look at the descriptive summary.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg_scores$Critic_Count)
+summary(vg_scores$User_Count)
+```
+
+And compare them as boxplots.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+bpc1 <- ggplot(data=vg_scores,
+       aes(x = 'Critic_Count', y=Critic_Count)) + 
+  geom_boxplot(aes(fill = I('#0072B2'))) +
+  scale_y_log10(breaks = c(1,10,100,10000),
+                limits = c(-10, 10000))
+
+bpc2 <- ggplot(data=vg_scores,
+       aes(x = 'User_Count', y=User_Count)) + 
+  geom_boxplot(aes(fill = I("#F0E442"))) +
+  scale_y_log10(breaks = c(1,10,100,10000),
+                limits = c(-10, 10000))
+
+grid.arrange(bpc1,bpc2,ncol=2)
+```
+
+We are seeing a lot more outlier values here, especially for the user scores. It's not actually surprising when we consider popular games tend to have more reviews and lesser known indie games tend to have almost none. The popular fantatsy RPG game 'The Witcher 3' has a whooping 10665 reviews for only the PC platform. Compare this to only 4 reviews for 'Flash Focus: Vision Training in Minutes a Day'(Interestingly, both games were published by the same company, Namco Bandai).
+
+One possible explanation may be that while popular games may have a lot of reviews from both the critics and the users, critics are still obliged to review even the less popular, even terrible games. After all, it's their job to review games, bad or good.
+
+## Developer
+Let's see how many developers there are.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+str(vg$Developer)
+```
+
+As in the case of publisher, there are just too many developers here. We also see that there are few developers that are producing more games than the rest, although it's really hard to see in a single histogram.
+
+So like before, let's create a separate dataframe with only the top 1% major companies(since there are a lot more developers than developers), and create a histogram with that dataframe.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg$Developer[vg$Developer == ""] <- NaN
+
+major_dev <- vg %>%
+  group_by(Developer) %>%
+  summarise(
+    n = n()) %>%
+  arrange(desc(n))
+
+head(major_dev)
+summary(major_dev)
+
+ggplot(data=subset(major_dev, 
+                   n >= quantile(n, 0.99) & !is.na(major_dev$Developer)),
+       aes(x = Developer, y = n, fill = Developer)) +
+  geom_bar(stat = 'identity') +
+  scale_y_continuous(expand = c(0,0),
+                     limits = c(0, 210)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.ticks.x = element_blank()) +
+  guides(fill = FALSE)
+  
+```
+
+Again, we see that while the majority have only released less than 10 games (3rd quantile value is 5), the major developers have released more than 50, and even close to 200. Ubisoft is the clear leader in this field, followed by EA Sports, EA Canada, and Konami. Considering that EA Sports, EA Canada, EA Tiburon are are all under the EA umbrella, and Ubisoft Montreal under Ubisoft, the major developer companies are seriously releasing a lot of games.
+
+## Rating
+The rating system used for this dataset is gathered from ESRB (Entertainmnet Software Rating Board). This organization determines the rating of a game based on the contents of the game to ensure that each game is played by suitable audience group. (https://www.esrb.org/)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg$Rating)
+```
+
+We see here that there are 8 game ratings in this dataset, ordered by suitable starting audience age, though the board only lists 6 different ratings:
+
+* EC: Early childhood
+* E: Everyone
+* E10+: Everyone 10+
+* T: Teen
+* M: Mature
+* AO: Adults only
+
+
+So what are the other two ratings, 'K-A' and 'RP'?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+subset(vg, vg$Rating == 'K-A' | vg$Rating == 'RP')
+```
+
+Further research(https://en.wikipedia.org/wiki/Entertainment_Software_Rating_Board) shows that K-A is short for 'Kids to Adults', which was how 'Everyone' rating games were called prior to 1998. Thus, we must change these K-A rating values to E, for Everyone.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg$Rating[vg$Rating == 'K-A'] <- 'E'
+```
+
+A 'RP'(Rate-Pending) game, on the other hand, is a game that has not yet been assigned a final rating by the board. This is the game 'Supreme Ruler: Cold War' released on PC in 2011. The board has finally determined the rating for this game as E10+, so we should change the 'RP' to 'E10+' too. Let's also fill the empty values to NA too on the way.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg$Rating[vg$Rating == 'RP'] <- 'E10+'
+vg$Rating[vg$Rating == ""] <- NaN
+```
+
+Let's check again that we only have the 6 rating groups.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg$Rating)
+```
+
+Good. Now let's create a histogram of games by each rating. We should also get the order in the ESRB rating order too, since R automatically orders factors alphabetically.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(subset(vg, !is.na(vg$Rating)),
+       aes(x = Rating, fill = Rating)) +
+  geom_histogram(stat = 'count') + 
+  scale_x_discrete(limits = c('EC', 'E', 'E10+', 'T', 'M', 'AO')) +
+  scale_y_continuous(expand = c(0,0),
+                     limit = c(0,4100)) +
+  guides(fill = FALSE)
+
+```
+
+We can see that the 2 extreme ratings at both ends (EC and AO) have ignorable number of games released. In fact, for this particular dataset, there is only 1 'AO' rated game (Grand Theft Auto: San Andreas).
+
+The 'Everyone' rating is the most common, followed by 'Teens'. Games intended only for adults (M & AO) only account for 15.7% of all the games. Who says video game is too violent for children and teens?
+
+## Sales volume (in million units)
+There is one thing to verify in the sales data, and that is whether the individual NA, EU, JP, and Other sales add up to the Global_Sales. If it doesn't, we might need to create a separate Total_Sales column that is the actual total sum of all the sales volume.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+vg <- transform(vg, 
+                sales_diff = Global_Sales - (NA_Sales+EU_Sales+JP_Sales+Other_Sales))
+
+summary(vg$sales_diff)
+```
+
+There are some differences, but really, a difference of 0.02 is easily ignorable as it can be accounted to rounding error. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(vg$Global_Sales)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(vg, aes(x = 'Global_Sales', y = Global_Sales)) +
+  geom_boxplot(alpha = 0.2) +
+  scale_y_log10()
+
+subset(vg, vg$Global_Sales > 80)
+```
+
+It seems that while most sales are under 0.5 million, there is a big outlier. This game is Wii Sports for Wii consoles. This game was of course quite popular and family-friendly, but one of the reason it was so successful was because it was a bundled product of the Wii console (https://en.wikipedia.org/wiki/List_of_best-selling_video_games), meaning that it just came with the Wii, boosting up the sales instantly. Let's leave out this huge outlier for a while.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(subset(vg, vg$Global_Sales < 80), 
+       aes(x = 'Global_Sales', y = Global_Sales)) +
+  geom_boxplot(alpha = 0.2) +
+  scale_y_log10() +
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank())
+```
+
+However, even with the extreme outlier out of the picture, there are still quite a few succesful outliers that exceed the sales of majority of the games (winner takes it all).
+
+To make more sense out of the graph, it would be better to apply a logrithmic scale to the y-axis to see the whole picture. While changing the axis, it would also be nice to see if the trend is similar in sales of different regions.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+grid.arrange(
+  ggplot(vg, aes(x = 'Global_Sales', y = Global_Sales)) +
+    geom_jitter(alpha = 0.1) +
+    geom_boxplot(alpha = 0.2, color = 'red') +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(),
+          axis.title.x = element_blank()),
+  
+  ggplot(vg, aes(x = Global_Sales)) +
+    geom_histogram(bins = 30) +
+    scale_y_log10(),
+  ncol = 2
+  )
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+grid.arrange(
+  ggplot(vg, aes(x = 'NA_Sales', y = NA_Sales)) +
+    geom_jitter(alpha = 0.1) +
+    geom_boxplot(alpha = 0.2, color = 'red') +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(),
+          axis.title.x = element_blank()),
+  
+  ggplot(vg, aes(x = NA_Sales)) +
+    geom_histogram(bins = 30) +
+    scale_y_log10(),
+  ncol = 2
+  )
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+grid.arrange(
+  ggplot(vg, aes(x = 'EU_Sales', y = EU_Sales)) +
+    geom_jitter(alpha = 0.1) +
+    geom_boxplot(alpha = 0.2, color = 'red') +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(),
+          axis.title.x = element_blank()),
+  
+  ggplot(vg, aes(x = EU_Sales)) +
+    geom_histogram(bins = 30) +
+    scale_y_log10(),
+  ncol = 2
+)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+grid.arrange(
+  ggplot(data = vg, aes(x = 'JP_Sales', y = JP_Sales)) +
+    geom_jitter(alpha = 0.1) +
+    geom_boxplot(alpha = 0.2, color = 'red') +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(),
+          axis.title.x = element_blank())
+  ,
+  ggplot(data =vg, aes(x = JP_Sales)) +
+    geom_histogram(bins = 30) +
+    scale_y_log10(),
+  ncol = 2
+)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+grid.arrange(
+  ggplot(vg, aes(x = 'Other_Sales', y = Other_Sales)) +
+    geom_jitter(alpha = 0.1) +
+    geom_boxplot(alpha = 0.2, color ='red') +
+    scale_y_log10() +
+    theme(axis.text.x = element_blank(),
+          axis.title.x = element_blank())
+  ,
+  ggplot(vg, aes(x = Other_Sales)) +
+    geom_histogram(bins = 30) +
+    scale_y_log10(),
+  ncol = 2
+)
+```
+
+We are seeing some similar patterns for all sales. I guess winner really takes it all in this market. 
+
+We can also see that sales from NA and EU regions constitutes the majority of global sales, while JP and other sales are smaller.
+
+## Univariate Analysis - Summary
+### What is the structure of your dataset?
+There are 16444 observations with 16 columns. The sales columns (NA, EU, JP, Other, Global) indicate the sales volume in millions of units, and the NA, EU, JP, Other add up to the Global Sales.
+
+However, there are quite a huge number of observations with NaN critic, user score values or developer or rating values. This may limit subsequent analysis on these variables. Furthermore, there are notable amount of values that are not properly assigned to particular value for the Genre variable under the name 'Misc.' genre. This, again, may limit our analysis on genre related analysis.
+
+### What is/are the main feature(s) of interest in your dataset? What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+
+My main interest lies on these individaul variables, as well as their relationships:
+1. Sales
+2. Scores (user and critic)
+3. Platform
+4. Genre
+
+These will allow me to look into some interesting questions, such as what factors influence sales the most, is there a preference for particular genre for each platform, and so on.
+
+## Did you create any new variables from existing variables in the dataset?
+I created a 'sales_diff' variable to verify that all the sales matched up to 'Global_Sales'. Though there were some differences, the differences were small enough that they were easily ignorable. This variable, thus, would not probably be used for subsequent analysis.
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+
+I had to tidy and change the form of data multiple times. This was surprising considering how the dataset seemed like it was in a 'good, usable' format at first glance.
+
+These are some of the changes I have made to the data so far, though I suspect I would make more changes in subsequent analysis.
+
+1. Changed non-numeric variables to numeric variables (Year_of_Release, User_Score).
+2. Transformed user scores to 0-100 scale to make easier comparison with critic scores.
+3. Created a new dataset that only contained either a critic or user score.
+4. Got rid of observations after year 2016.
+5. Got rid of observations without a name or genre.
+6. Created new dataframes for Developer and Publisher to look into only 'major' companies.
+7. Changed rating values of some observations to keep the 6-tier rating system of ESRB.
+
+# Bivariate Plots Section
+Let's move on to the bivariate analysis!
+
+## Correlation
+
+One of the unfortunate thing about this dataset is that it clearly lack numerical values, which doesn't allow me to explore numerical correlation coefficients as extensively as in the diamonds analysis. I can, however, conduct a correlation analysis on the numeric values, which are the sales values and the score values. For this reason, I will be using the vg_scores dataset again.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+res <- cor(vg_scores[,c("NA_Sales", "EU_Sales", 
+                        "JP_Sales", "Other_Sales", 
+                        "Global_Sales", "Critic_Score", 
+                        "Critic_Count", "User_Score", 
+                        "User_Count")])
+res
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggcorr(vg_scores[,c("NA_Sales", "EU_Sales", 
+                   "JP_Sales", "Other_Sales", 
+                   "Global_Sales", 
+                   "Critic_Score",
+                   "Critic_Count",
+                   "User_Score", 
+                   "User_Count")], 
+      main ="Simple Scatterplot Matrix",
+      label = TRUE)
+```
+
+Because sales are interrelated to one another, the high correlation coefficients in between the sales data is not surprising and is expected. It is interesting that the JP sales are generally less correlated with other sales data. This may indicate that the JP market is quite different from the others.
+
+We can also see that neither he user scores, nor the critic scores have a strong relationship with global sales. I assumed that higher scores may lead to higher sales, but I guess there are other factors than 'scores' people look at when purchasing a game. It is also interesting to see that user scores do not correlate much with critic scores too. One of the reason may be that the user scores are too diverse in range.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = vg_scores, aes(x = Critic_Score, y = User_Score)) +
+  geom_jitter(alpha = 0.2) +
+  stat_smooth(method = 'lm', col = 'red') +
+  stat_smooth(col = 'blue')
+```
+
+We can see from the scatterplot that while the two are somewhat positively correlated, because the range is too diverse, a strong positive correlation cannot be assumed.
+
+## Platform  vs Sales
+As mentioned before in the univariate analysis section, gaming platform (or console) is an interesting attribute to explore a bit more, especially when linked with sales and genre. However, there just seems to be too many consoles to explore.
+
+Let's narrow this down a bit. The modern day video game platform competition is a 3-tie among playstation, xbox, and wii, with a dedicated few loyal fans remaining in PC. So why not look at these 3 platforms for this particular analysis?
+
+In particular, I want to look at the 7th generation consoles, which include PS3, Wii, and X360 (https://en.wikipedia.org/wiki/Seventh_generation_of_video_game_consoles). 
+
+While it would be interesting to look into the newest generation consoles, they are still relatively new in the market, and still have games being published every year, so the numbers are not conclusive. So let's create a seperate dataset with games only released for these consoles.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# create dataset only for generation 7 consoles
+gen_7 <- subset(vg, 
+                vg$Platform == 'PS3' | vg$Platform == 'Wii' | vg$Platform == 'X360')
+
+#summarise dataset
+dim(gen_7)
+summary(gen_7)
+
+```
+
+There are 3824 observations for this dataset, which is still a decent amount for a simple analysis.
+
+Let's create a histogram of number of games released for each platform. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = gen_7, aes(x=Platform)) + 
+  geom_histogram(stat = 'count', aes(fill = Platform)) + 
+  scale_y_continuous(breaks = seq(0,1500,300),
+                     expand = c(0,0),
+                     limits = c(0, 1500)) +
+  guides(fill = FALSE)
+
+summary(gen_7$Platform)
+```
+
+PS3 has a few more titles released, but the difference is easily ignorable.
+
+Let's compare global sales by platform.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = gen_7, aes(x = Platform,
+                         y = Global_Sales)) +
+  geom_bar(stat = 'sum', aes(fill = Platform)) +
+  scale_y_continuous(breaks=seq(0,1000,200)) +
+  theme(legend.position = 'none')
+```
+
+This shows a slightly different picture. In terms of actual dollar sales, ps3 has performed worse than the other two platforms. In fact, X360, which has the lowest number of games available, seems to exceed in terms of sales.
+
+How much can we attribute global sales variability to the platform attribute?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+reg = lm(formula = Global_Sales ~ Platform, 
+         data = gen_7)
+summary(reg)
+
+```
+
+Apparently, not that much. It seems that it does not matter what platform you need to target to become successful in the industry, though it would be wise to target multiple platforms for bigger sales if you do have the ability to do so.
+
+## Platform vs scores
+Do scores vary across platform for both critics and users? Let's compare the graphs between critic and user scores across different platforms.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+gen_7_c <- ggplot(data = gen_7, 
+                  aes(x = Platform, y = Critic_Score)) +
+  geom_boxplot(aes(fill = Platform)) +
+  stat_summary(fun.y = mean, geom = 'point', shape = 4) +
+  coord_cartesian(ylim = c(0,100)) +
+  scale_y_continuous(breaks = seq(0,100,10)) +
+  guides(fill = FALSE)
+
+gen_7_u <- ggplot(data = gen_7, 
+                  aes(x = Platform, y = User_Score)) +
+  geom_boxplot(aes(fill = Platform)) +
+  stat_summary(fun.y = mean, geom = 'point', shape = 4) +
+  coord_cartesian(ylim = c(0,100)) +
+  scale_y_continuous(breaks = seq(0,100,10)) +
+  guides(fill = FALSE)
+
+grid.arrange(gen_7_c, gen_7_u, ncol = 2)
+```
+
+Now this is interesting. While generally more generous, critics really seem harsh about Wii platform games. The score range and median seemes to be mostly similar for user scores, but interestingly, Wii seems to do slightly better with median scores and max score. In fact, the range of wii scores is wider than the other two platforms.
+
+However, this analysis would be more relevant if we can compare the scores for multi-platform games - that is, same games that are released on multiple platforms. Analysis on the scores of these games across different platforms will allow us to see how the scores really differ for each platform. If the scores seem to differ a lot among the games, then yes, we should say that there seems to be at least some bias against certain platforms. So let's create a separate subset of gen_7 with only multiplatform titles.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# reference: http://stackoverflow.com/questions/20204257/subset-data-frame-based-on-number-of-rows-per-group)
+
+# subset of gen_7 with multiplatform games
+tt <- table(gen_7$Name)
+mp_7 <- subset(gen_7, 
+                     Name %in% names(tt[tt > 1]))
+
+# boxplot critic and user scores by platform for comparison
+gen_7_c_mp <- ggplot(data = mp_7, 
+                     aes(x = Platform, y = Critic_Score)) +
+  geom_boxplot(aes(fill = Platform)) + 
+  stat_summary(fun.y = mean, geom = 'point', shape = 4) +
+  coord_cartesian(ylim = c(0,100)) +
+  scale_y_continuous(breaks = seq(0,100,10)) +
+  guides(fill = FALSE)
+
+gen_7_u_mp <- ggplot(data = mp_7, 
+                     aes(x = Platform, y = User_Score)) +
+  geom_boxplot(aes(fill = Platform)) + 
+  stat_summary(fun.y = mean, geom = 'point', shape = 4) +
+  coord_cartesian(ylim = c(0,100)) +
+  scale_y_continuous(breaks = seq(0,100,10)) +
+  guides(fill = FALSE)
+
+grid.arrange(gen_7_c_mp, gen_7_u_mp, ncol = 2)
+
+```
+
+See, you would think that with only the games with the exact same title, we would see three almost identical boxplots for both user and critic scores. Instead, we're seeing large variability in the user score ranges. Perhaps this is because 
+(a) titles have different game qualities for each console, 
+(b) there are big differences in number of users leading to bias in data, or 
+(c) PS3 players are just never satisfied with what they are given, unlike the grateful Wii fans. 
+
+Whatever the case, the bias in scores attributed to platform base seems like an interesting topic to be discovered in the future, though a very hard task. For example, some players may own all three consoles with the same game title for each console. Opinions from these selected players may reveal more about bias against platform, but it really is a small subset of the whole gaming community, and even then, we cannot make sure that these players have no bias against certain consoles.
+
+## Platform vs Genre
+Do different platforms have specific genre preferences? Let's use the gen_7 dataset again to see the trends in genre across the 3 platforms.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ex <- gen_7 %>%
+  group_by(Platform, Genre) %>%
+  summarise(
+    n = n()) %>%
+  arrange(Genre)
+
+ggplot(data = ex,
+       aes(x = Platform, y = n)) +
+  geom_line(aes(color = Genre, group = Genre)) +
+  geom_point(size = 2, aes(color = Genre))
+```
+
+We see an interesting pattern here. While PS3 and X360 have almost identical ranking of number of games by genre (Action, Sports and Shooter being the most popular), Wii has a significantly different ranking. It seems that the mysterious Misc. genre games prevail for the Wii platform, followed by Sports and Action. Contrastingly, shooter genre games are not as abundant in the Wii platform. From genre alone, it seems that PS3 and X360 are direct competitors of one another, while Wii seems to specialize in another genre.
+
+
+## Genre vs year of release
+So it seems that popularity of each genre differ by platforms. What about the year games were released? Is there a genre trend going on?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# reference:http://www.sthda.com/english/wiki/ggplot2-area-plot-quick-start-guide-r-software-and-data-visualization
+
+ggplot(data = vg, 
+       aes(x = Year_of_Release, fill = Genre)) + geom_bar() +
+  scale_y_continuous(labels = percent_format()) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+While Action may have the most game titles now, this wasn't always the case. In fact, this seems to be a fairly new trend, starting from around the mid 2000s.
+
+The same goes for the Misc genre. The large number of Misc. games seems to be released between early 2000s and mid 2010s.
+
+## Genre vs Scores
+Do critic and user scores differ across genres?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+gs_c <- ggplot(data = vg_scores, 
+               aes(x = Genre, y = Critic_Score)) +
+  geom_boxplot(aes(fill = Genre)) +
+  scale_y_continuous(breaks = seq(0,100,10)) +
+  geom_point(stat='summary', fun.y = mean, color='red') +
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.title.x = element_blank())
+
+gs_u <- ggplot(data = vg_scores, 
+               aes(x = Genre, y = User_Score)) +
+  geom_boxplot(aes(fill = Genre)) +
+  scale_y_continuous(breaks = seq(0,100,10)) +
+  geom_point(stat = 'summary', color = 'red', fun.y = mean) + 
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+grid.arrange(gs_c, gs_u)
+```
+
+Scores do differ by genre, although the difference is not very significant between critics and users.
+
+Again, we see that users scores are more highly dispersed compared to critic scores. We also see that while users tend to throw harsher scores on games they dislike (there are quite a few games that scored lower than 10 for user scores while none for critics'), the median score is higher for all genre games. This is comparable to the mean values, which are obviously much lower for the user scores due to the lower outliers.
+
+## Genre vs Sales
+Let's see if the genre sales in different regions are similar to that of global sales.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+genre_na <- ggplot(data = vg,
+       aes(x = Genre, y = NA_Sales)) +
+  geom_bar(stat = 'identity', 
+           aes(fill = Genre)) +
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+        axis.title.x = element_blank())
+
+genre_eu <- ggplot(data = vg,
+                   aes(x = Genre, y = EU_Sales)) +
+  geom_bar(stat = 'identity', 
+           aes(fill = Genre)) +
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+        axis.title.x = element_blank())
+
+genre_jp <- ggplot(data = vg,
+                   aes(x = Genre, y = JP_Sales)) +
+  geom_bar(stat = 'identity', 
+           aes(fill = Genre)) +
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+        axis.title.x = element_blank())
+
+genre_etc <- ggplot(data = vg,
+                   aes(x = Genre, y = Other_Sales)) +
+  geom_bar(stat = 'identity', 
+           aes(fill = Genre)) +
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+        axis.title.x = element_blank())
+
+genre_global <- ggplot(data = vg,
+                   aes(x = Genre, y = Global_Sales)) +
+  geom_bar(stat = 'identity', 
+           aes(fill = Genre)) +
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+        axis.title.x = element_blank())
+
+grid.arrange(genre_na, genre_eu, 
+             genre_jp, genre_etc, 
+             genre_global, ncol=3)
+
+
+```
+
+Most of regions follow the gloabl sales histogram shape, but Japan's sales really stands out here. This also somewhat correlates with the earlier findings that the Japanese market is less correlated with other market in terms of sales. Japanese customers seem really into role playing games, a genre that takes about 28% share of the whole Japanese market. That is huge and exceptional, considering that the same genre only does moderately well in other markets. Considering that J-RPG is a whole huge genre itself, I guess this is just a cultural difference. It would be interesting to look into specific market and cultural differences further, because I suspect that the sales in Korea would be very different from that of Japan. For one thing, while shooting is another less popular genre in Japan, it is quite huge in the Korean gaming industry.
+
+## Rating vs Sales
+Let's see how sales are for each ratings. Would this be any different from the number of games released?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+gsr <- ggplot(data = subset(gen_7, !is.na(gen_7$Rating)), 
+              aes(x = Rating, y = Global_Sales)) + 
+  geom_bar(stat = 'sum', aes(fill = Rating)) +
+  scale_x_discrete(breaks= c('EC', 'E', 'E10+', 'T', 'M', 'AO')) +
+  ggtitle('Global sales by Rating') +
+  theme(legend.position = 'none')
+
+gtr <- ggplot(data = subset(gen_7, !is.na(gen_7$Rating)), 
+              aes(x = Rating)) +
+  geom_histogram(stat = 'count', aes(fill = Rating)) +
+  scale_x_discrete(breaks = c('EC', 'E', 'E10+', 'T', 'M', 'AO')) +
+  ggtitle('Number of games by Rating') +
+  theme(legend.position = 'none')
+
+grid.arrange(gsr, gtr, ncol = 2)
+
+```
+
+This is very interesting. The most striking comparison in the two graphs is how the 'M'ature games and 'T'een games differ in terms of sales and number of games released. While there are far more games released under the teen rating, mature games seem to do much better in the marke. In fact, it even surpasses the sales of 'E'veryone rating games. Other sources have pointed out this observation too (reference: https://arstechnica.com/gaming/2011/03/in-2010-5-percent-of-games-were-rated-m/).
+
+It would be interesting to see the actual consumer dynamics with sales and price information in the future. It seems like the mature contents are the real cash cows.
+
+
+## Rating vs Platform
+As an extension, let's see what rating games are most common for the generation 7 consoles.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+rs_p <- subset(gen_7, !is.na(gen_7$Rating)) %>%
+  group_by(Platform, Rating) %>%
+  summarise(
+    n = n()) %>%
+  arrange(Rating)
+
+ggplot(data = rs_p,
+       aes(x = Platform, y = n)) +
+  geom_line(aes(color = Rating, group = Rating)) +
+  geom_point(size = 2, aes(color = Rating))
+
+```
+
+Likewise as in the genre exploration, PS3 and X360 follow a similar pattern, while Wii seems to stand out as a more family-friendly console.
+
+
+## Rating vs Genre
+Finally, let's look at the relationship between genre and ratings. Does a specific genre have more games released under a certain rating?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+rs_g <- gen_7 %>%
+  group_by(Rating, Genre) %>%
+  summarise(
+    n = n()) %>%
+  arrange(Genre)
+
+ggplot(data = subset(rs_g, !is.na(rs_g$Rating)),
+       aes(x = Rating, y = n)) +
+  geom_line(aes(color = Genre, group = Genre)) +
+  geom_point(size = 2, aes(color = Genre))
+
+```
+
+There are some noticeable points in the graph.
+1. Almost all sports games are for 'E' or 'E10+'. This is understandable because you wouldn't really see a 'violent' gameplay in a sports game.
+2. Action games, the most common among all the genres, are more geared towards the upper customers.
+3. Most shooter games are mature games. As in the case of sports game, this is pretty easy to understand because shooting itself is a violent action, not to mention the consequences of shooting are equally grusome.
+
+## Bivariate Analysis - Summary
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+
+I really went far and looked into various relationships. To be precise, I looked into 10 different relationships, and some of them brought out interesting trends. Here are some of the more interesting observations:
+
+1. The scores and overall sales do not really correlate. Part of the reason may be that the user scores are just too diverse, but that still fails to explain why the correlation is so weak for the critic scores too.
+
+2. Among the generation 7 consoles, X360 and PS3 really seem to be direct competitors of each other, as the composition of ratings and genres for the games released for these consoles are more or less similar. On the other hand, Wii seems to really stand out by going for the more family-friendly games.
+
+3. Players and critics alike seem to score the same game differently among different platforms. Scores for multi-platform games tend to vary a lot, showing that there are other factors than just the gameplay taken into account when giving a score for the game.
+
+4. The japanese market is quite different from the other markets, in that gamers prefer RPGs more than the adventure and shooting games, games that are more popular on average around the world.
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+
+Interestingly, there were some fun things to look at while examining the Rating variable. Specifically, it seems that while there are more Teen and Everyone games available in the market, Mature games tend to to much better in terms of sales.
+
+Furthermore, specific game genres tend to be categorized into different ratings. Action games are more geared towards the older users, while Shooting games all in for mature contents. Meanwhile, sports, another popular genre, is a friendly genre for everyone to enjoy.
+
+### What was the strongest relationship you found?
+
+Sadly, relationships involving numerical values (sales, user/critic scores) tend to have weak correlation coefficients. It was, however, interesting to find that while other sales values have pretty strong correlation with one another, JP_Sales tend to have a weaker relationship with others. It would be interesting to look into this market in the multivariate analysis.
+
+# Multivariate Analysis
+
+## Global sales of each genre by platform
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = gen_7, 
+       aes(x = Genre, y = Global_Sales, 
+           fill = Platform)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  
+```
+
+Again, Wii stands out from the rest in terms of the actual composition of the total global sales. While the sports and the misc. genre games are quite big in Wii (sports possibly due to Wii Sports), shooters and actions are the clear leaders for the other platforms. Shooter genre games are almost non-existent in the Wii platform.
+
+## Global sales of games of each rating by platform
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = subset(gen_7, !is.na(gen_7$Rating)), 
+       aes(x = Rating, y = Global_Sales, 
+           fill = Platform)) +
+  geom_bar(stat = 'identity', 
+           position = 'dodge')
+```
+
+And we see a similar pattern in the sales by ratings too. Mature games are clearly the sales winner in for PS3 and X360, while Wii really succeeds in targeting the mass market. Mature games are clearly not their strength.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data =subset(vg, !is.na(vg$Rating)),
+       aes(x = Genre, y = Global_Sales,
+           fill = Rating)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90,
+                                   hjust = 1,
+                                   size = 8))
+
+```
+
+We can see the reason why from this graph comparing the global_sales by each genre and rating. Shooter and Action games, both which are clearly more abundant in X360 and PS3 platforms, have the most mature contents. On the other hand, sports games that are more popular for the Wii platform are clearly getting a lot of its revenue by targeting the mass market ('E' rating). 
+
+
+## Sales of each game genre by platform in Japanese market vs. Global market
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = gen_7, 
+               aes(x = Genre, y = JP_Sales, 
+                   fill = Platform)) +
+  geom_boxplot(alpha = 0.6) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, size = 8))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = gen_7, 
+               aes(x = Genre, y = Global_Sales, 
+                   fill = Platform)) +
+  geom_boxplot(alpha = 0.6) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, size = 8))
+```
+
+
+While there are several noteable wii platform games with impressive performance both in the Japanese market and the global market, the trend is more dominant in the Japanese market. In fact, if there is one clear trend, it is that Xbox doesn't tend to do really well in the Japanese market. This is surprising, because in the bivariate analysis, we have seen that Xbox tends to do better in overall sales than the other two platforms. This may be because both PS and Wii are made by Japanese companies, while Xbox is created by an American company.
+
+## Sales of each game genre by rating in Japanese market vs. Global market
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+gsrg <- ggplot(data = subset(vg, !is.na(vg$Rating)), 
+               aes(x = Rating, y = Global_Sales, 
+                   fill = Genre)) + 
+  geom_bar(stat = 'identity')
+
+jprg <- ggplot(data = subset(vg, !is.na(vg$Rating)), 
+               aes(x = Rating, y = JP_Sales, 
+                   fill = Genre)) + 
+  geom_bar(stat = 'identity')
+
+grid.arrange(jprg, gsrg, ncol = 2)
+
+```
+
+Again, we see something very intersting here. In the multivariate analysis, we have found out that mature games tend to do better in terms of sales, but it seems that the Japanese market is an exception. For one thing, it is the 2nd lowest performing rated games in the market, and even within the stack, the shooter game take only a small portion of the whole sales, while the same genre is a major sales source in the global market.
+
+We can also see that the Role-Playing genre takes most of the sales revenue for the Teen rated games in the Japanese market, while its portion in the global market is fairly small.
+
+## Multivariate Analysis - Summary
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest? Anything interesting?
+
+I wanted to look further into 2 things for the multivariate analysis:
+
+1. Sales among major platforms by genre and rating: I've looked into the same analysis by number of games in the bivariate analysis, but I wanted to look at the actual sales value, because as seen in the case of Sales vs number of games for each rating, sales and number of games tell a different story. However, in this case, it still tells the same story, that the Wii platform is clearly targeting a different market, and is doing well in that market. It really seems to position itself as a platform for everyone, while the other two platforms are going on direct competitons with one another, focusing on mature shooting and action games.
+
+2. Japanese market vs. global market: As seen in the bivariate analysis, the Japanese market is a unique market in terms of taste. This observation continues in the multivariate plots. We can see that shooting games are really a disappointment even in terms of sales in the Japanese market. On the other hand, RPGs are really big, in all ratings. It would be interesting to see how gaming developers and publishers take a different approach in the Japanese market when it comes to marketing, because it really is a unique market.
+
+# Final Plots and Summary
+
+## Plot 1: Winner takes it all
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(major_pub,n>=quantile(n,0.95) & !is.na(major_pub$Publisher)),
+       aes(x = Publisher, y = n)) +
+  geom_bar(stat='identity',
+           aes(fill=Publisher)) +
+  scale_y_continuous(breaks = seq(0, 1500, 250)) +
+  ggtitle('Number of games by publisher') +
+  labs(y = 'number of games published')+
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(size =20, hjust = 0.5))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data=subset(major_dev, n >= quantile(n, 0.99) & !is.na(major_dev$Developer)),
+       aes(x = Developer, y = n)) +
+  geom_bar(stat = 'identity', aes(fill = Developer)) +
+  ggtitle('Number of games by developer') +
+  labs(y = 'number of games developed') +
+  guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1),
+        plot.title = element_text(size = 20, hjust = 0.5))
+```
+
+
+In both cases of the publisher and developer, while there are a lot of companies out there, only the top few companies dominate the video games industry. The leaders in both cases even outrun the other top competitors by a large margin.
+
+## Plot 2: PS3 and XBox's direct competition
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+grid.arrange(ggplot(data = gen_7, 
+                    aes(x = Genre, y = Global_Sales, 
+                        fill = Platform)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+    ggtitle('Global sales of games by genre and platform') +
+    theme(plot.title = element_text(size = 20, hjust = 0.5),
+          axis.text.x = element_text(angle = 60, hjust = 1)), 
+  
+  ggplot(data = gen_7, 
+         aes(x = Rating, y = Global_Sales, 
+             fill = Platform)) +
+  geom_bar(stat = 'identity', position = 'dodge') +
+    ggtitle('Global sales of games by game ratings and platform') +
+    theme(plot.title = element_text(size = 20, hjust = 0.5)),
+  ncol = 1)
+```
+
+Among the generation 7 consoles, PS3 and XBOX really tend to go on a 1 on 1 direct competiton, with similar rated games and genre of games. Wii, on the other hand, seems to go for a totally different market: a family-friendly platform with games for all audiences.
+
+
+## Plot 3: The unique Japanese market
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+jprg + 
+  ggtitle('Japanese sales of games by Rating and Genre') +
+  theme(plot.title = element_text(size = 20, hjust = 0.5))
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+gsrg + 
+  ggtitle('Global sales of games by Rating and Genre') +
+  theme(plot.title = element_text(size = 20, hjust = 0.5))
+```
+
+The Japanese customer's taste are really distincitve. The bigger shooter and action games are big no-no in the Japanese market, while RPG tends to be popular, regardless of the target audience.
+
+# Reflection
+By analyzing this dataset, I initially hoped to look into how different variables correlate with sales or score values. Though it was disappointing to find that the numerical values did not really correlate with any of the categorical variables (or even with each other, for that matter), the analysis was still interesting in that it enlightened me some facts about the industry that I wasn't aware of before.
+
+With Nintendo introducing its brand new console 'Switch', people are focusing on how Nintendo will be trying to increaes its staggering revenue in the ever so competitive market against playstation and Xbox. However, if what I have observed in this analysis holds true, then Nintendo at least has an upper hand in the mass market, and should try to increase sales in the market it is already doing so strong.
+
+There are some limitations to the dataset itself, as listed below.
+
+1. Adjusted sales value
+Though this dataset is huge and extensive, it is not without its fault. One of them is the lack explanation for each variable. For one, while sales data are provided, it is not clear whether the value is adjusted for inflation and time. It wouldn't be really fair to compare sales of 2016 to that of 2 decades ago.
+
+2. Missing values
+There were a lot of missing values, especially for the numeric values. A seperate dataset had to be created to only contain valid critic or user scores, in order not to discard observations that have other variable information.
+
+3. More variables
+While the variables available were just enough to explore some interesting relationships, it would be nice to have more variables to further dig into the dataset. 
+
+One of them would be a more specific or 2nd genre classification. While some games are clearly a single-genre game (most sports games will be, at most parts, a pure sports game), some others may be classified into multiple genres. The Zelda series, a popular Nintendo game series, are a good example. They are action adventure games, but the series are well known for their puzzle aspects too. Sub-genres or 2nd genres will also allow us to look at how some genres are more tightly related to one another than others.
+
+Another would be the customer and user information. This would require a more complex analysis, but it would be nice to see who actually bought what kind of games, and how each group of customers rate games, instead of just looking at the region variables. 
+
+
+
+
